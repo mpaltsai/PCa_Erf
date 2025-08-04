@@ -1,0 +1,105 @@
+---
+title: "clustering_Song_2022"
+author: "Ismini"
+date: "2025-07-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(SeuratObject)
+```
+
+```{r}
+#read the list with samples
+obj_to_integrate <- readRDS("../list_filtered_seurat_Song_2022.rds")
+obj_to_integrate
+#merge samples
+merged_seurat <- merge(obj_to_integrate[[1]], obj_to_integrate[-1])
+merged_seurat
+```
+This merged object has the following samples:
+```{r} 
+unique(merged_seurat@meta.data$sample)
+```
+From these patients:
+```{r}
+unique(merged_seurat@meta.data$patient_id)
+```
+And the samples sources are:
+```{r}
+unique(merged_seurat@meta.data$sample_source)
+```
+
+We are going to split data into layers by sample source, normalize, find variable features, scala data and run PCA analysis
+```{r}
+#split into layers by sample source
+merged_seurat[["RNA"]] <- split(merged_seurat[["originalexp"]], f = merged_seurat$sample_source)
+DefaultAssay(merged_seurat) <- "RNA"
+merged_seurat <- NormalizeData(merged_seurat)
+merged_seurat <- FindVariableFeatures(merged_seurat)
+merged_seurat <- ScaleData(merged_seurat)
+merged_seurat <- RunPCA(merged_seurat)
+```
+
+```{r}
+ElbowPlot(merged_seurat, ndims = 30)
+```
+
+We'll search for neighbors to define clusters
+```{r}
+n_dims = 30
+merged_seurat <- FindNeighbors(merged_seurat, dims = 1:n_dims, reduction = "pca")
+message(paste("We used ", n_dims, " PCs to find neighbors "))
+resolution_param = 2
+merged_seurat <- FindClusters(merged_seurat, resolution = resolution_param, cluster.name = "unintegrated_clusters")
+message(paste("We searched for clusters at resolution: ", resolution_param))
+merged_seurat <- RunUMAP(merged_seurat, dims = 1:n_dims, reduction = "pca", reduction.name = "umap.unintegrated")
+message(paste("UMAP projection with ", n_dims, " PCs"))
+```
+
+So, clusters without integrating samples are as follows:
+```{r}
+DimPlot(merged_seurat, reduction = "umap.unintegrated", group.by = c("sample_source"), label.size = 2)
+DimPlot(merged_seurat, reduction = "umap.unintegrated", group.by = c("unintegrated_clusters"), label = TRUE) &
+  NoLegend()
+```
+
+With sample integration using anchors
+```{r}
+merged_seurat <- IntegrateLayers(
+  object = merged_seurat, method = CCAIntegration,
+  orig.reduction = "pca", new.reduction = "integrated.cca",
+  verbose = FALSE, assay = "RNA"
+)
+
+merged_seurat <- FindNeighbors(merged_seurat, reduction = "integrated.cca", dims = 1:30)
+merged_seurat <- FindClusters(merged_seurat, resolution = 2, cluster.name = "cca_clusters")
+merged_seurat <- RunUMAP(merged_seurat, reduction = "integrated.cca", dims = 1:30, reduction.name = "umap.cca")
+
+```
+
+Clusters are:
+
+```{r}
+
+DimPlot(
+  merged_seurat,
+  reduction = "umap.cca",
+  group.by = c("sample_source"),
+  label.size = 2
+  )
+
+DimPlot(
+  merged_seurat,
+  reduction = "umap.cca",
+  group.by = c("cca_clusters"),
+  label = TRUE
+  ) & NoLegend()
+```
+
+Integrated clusters mapped onto unintegrated UMAP projection:
+```{r}
+DimPlot(merged_seurat, reduction = "umap.unintegrated", group.by = c("cca_clusters"))
+```

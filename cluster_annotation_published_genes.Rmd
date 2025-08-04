@@ -1,0 +1,41 @@
+---
+title: "cluster annotation paper gene lists"
+author: "Ismini"
+date: "2025-08-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(SeuratObject)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(readxl)
+library(RColorBrewer)
+```
+
+```{r, read-data}
+annotation_res <- readRDS(file = "Song_2022_annotation_results_no_organoids.rds")
+cell_type_genesets <- read_xlsx("annotations_Song_2022.xlsx", sheet = "Normal Signature")
+```
+
+```{r, addModuleScores}, warning= FALSE, message= FALSE}
+merged_seurat <- annotation_res[[1]]
+merged_seurat <- AddModuleScore(merged_seurat,
+                  features = as.list(cell_type_genesets),
+                  name = names(as.list(cell_type_genesets))
+  )
+
+names(merged_seurat@meta.data)
+```
+
+```{r, plot_clusters, fig.width=10, fig.height=60, warning= FALSE, message= FALSE}
+FeaturePlot(merged_seurat,, ncol = 1,
+            features = names(merged_seurat@meta.data[24:34]), label = TRUE, repel = TRUE, order =TRUE) &
+            scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu" ))) & labs(subtitle = "Normal Signature") &  theme(plot.subtitle = element_text(hjust = 0.5, size = 12) )
+
+
+
+```
