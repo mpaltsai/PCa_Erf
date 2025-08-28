@@ -1,0 +1,186 @@
+---
+title: "dreamlet analysis"
+author: "Ismini"
+date: "2025-08-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(SeuratObject)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(readxl)
+library(RColorBrewer)
+library(decoupleR)
+library(OmnipathR)
+library(clustree)
+library(ggtext)
+library(dreamlet)
+library(zenith)
+
+```
+
+## Dreamlet analysis
+
+Read data, convert to SingleCellExperiment object and apply labels for Normal and Tumor cells
+```{r, read-data}
+epith_merged_seurat <- readRDS(file = "epith_merged_seurat_no_organoids.rds")
+epith_merged_seurat <- JoinLayers(epith_merged_seurat)
+epith_merged_seurat[["RNA"]] <- as(epith_merged_seurat[["RNA"]], Class = "Assay")
+#rownames(epith_merged_seurat@assays$RNA@counts)
+DefaultAssay(epith_merged_seurat) <- "RNA"
+sce <- as.SingleCellExperiment(epith_merged_seurat, assay = "RNA")
+sce@colData@listData$condit <- NULL
+sce@colData@listData$condit[which(sce@colData@listData$cca_clusters %in% c(3:7, 13,14,17,21,27))] <- "test_Tumor"
+sce@colData@listData$condit[which(sce@colData@listData$cca_clusters %in% c(0:2, 8:12, 15,16,18:20, 22:26))] <- "test_Normal"
+```
+
+```{r, create-pseudobulk}
+# create unique identifier for each sample
+sce$id <- paste0(sce$sample_source, sce$patient_id)
+
+pb <- aggregateToPseudoBulk(sce,
+  assay = "counts",
+  cluster_id = "cca_clusters",
+  sample_id = "id",
+  verbose = FALSE
+)
+
+assayNames(pb)
+```
+
+```{r, normalization-voom}
+# Normalize and apply voom/voomWithDreamWeights
+res.proc <- processAssays(pb, ~sample_source, min.count = 5)
+
+# the resulting object of class dreamletProcessedData stores
+# normalized data and other information
+res.proc
+
+# view details of dropping samples
+details(res.proc)
+```
+
+```{r, plot-voom}
+# show voom plot for each cell clusters
+plotVoom(res.proc)
+```
+
+```{r, variance-partitioning}
+# run variance partitioning analysis
+vp.lst <- fitVarPart(res.proc, ~sample_source)
+# Show variance fractions at the gene-level for each cell type
+genes <- vp.lst$gene[2:10]
+plotPercentBars(vp.lst[vp.lst$gene %in% genes, ])
+```
+
+```{r}
+# Summarize variance fractions genome-wide for each cell type
+plotVarPart(vp.lst, label.angle = 60)
+```
+
+```{r}
+# Differential expression analysis within each assay,
+# evaluated on the voom normalized data
+res.dl <- dreamlet(res.proc, ~sample_source)
+details(res.dl)
+# names of estimated coefficients
+coefNames(res.dl)
+names(res.dl)
+plotVolcano(res.dl$`6`, coef = "sample_sourceRadical Prostatectomy Paired Tumor")
+topTable(res.dl[["6"]], coef = "sample_sourceRadical Prostatectomy Paired Tumor")
+
+```
+
+```{r}
+genes <- c("KRT8", "ERG")
+plotGeneHeatmap(res.dl, coef = "sample_sourceRadical Prostatectomy Paired Tumor", genes = row.names(topTable(res.dl[["6"]], coef = "sample_sourceRadical Prostatectomy Paired Tumor")))
+plotGeneHeatmap(res.dl, coef = "sample_sourceRadical Prostatectomy Paired Tumor", genes = row.names(topTable(res.dl[["6"]], coef = "sample_sourceRadical Prostatectomy Paired Normal")))
+```
+
+```{r}
+# Load get_MSigDB database, C2 genes
+# use gene 'SYMBOL', or 'ENSEMBL' id
+# use get_GeneOntology() to load Gene Ontology
+###################################################### I have to make the function to use the genesets of PCa #########
+msdb.gs = get_MSigDB("C2", to="SYMBOL", organism = "HS")
+library(msigdbr)
+c2_gene_sets <- msigdbr(
+  db_species = "HS",
+  species = "human",
+  collection = "C2"
+)
+c2_PCa_gene_sets <- unique(c2_gene_sets[grep("prostate cancer", c2_gene_sets$gs_description), "gs_description"])
+
+msdb.gs_PCa <- list()
+for(x in msdb.gs){
+  if(x@shortDescription %in% c2_PCa_gene_sets$gs_description){
+    msdb.gs_PCa <- c(msdb.gs_PCa, x)
+  }else{
+    next
+  }
+}
+library(GSEABase)
+genesets_PCa <- GeneSetCollection(msdb.gs_PCa)
+# Run zenith analysis, and specific which coefficient to evaluate
+res.gsa = zenith_gsa(res.dl, genesets_PCa, 'sample_sourceRadical Prostatectomy Paired Tumor', progressbar=FALSE )
+head(res.gsa)
+# Show top gene sets: head(res.gsa)
+
+plotZenithResults(res.gsa, 5, 1)
+```
+
+```{r}
+# get genesets with FDR < 30%
+# Few significant genesets because uses Cellular Component (i.e. CC)
+gs <- unique(res.gsa$Geneset[res.gsa$PValue < 0.05])
+
+# keep only results of these genesets
+df <- res.gsa[res.gsa$Geneset %in% gs, ]
+
+# plot results, but with no limit based on the highest/lowest t-statistic
+plotZenithResults(df, Inf, Inf)
+```
+
+```{r}
+# test differential expression between B cells and the rest of the cell clusters
+ct.pairs <- c("6", "rest")
+
+fit <- dreamletCompareClusters(pb, ct.pairs, method = "fixed")
+
+# The coefficient 'compare' is the value logFC between test and baseline:
+# compare = cellClustertest - cellClusterbaseline
+df_cluster6 <- topTable(fit, coef = "compare")
+
+head(df_cluster6)
+
+```
+
+```{r}
+
+#Evaluate the specificity of each gene for each cluster, retaining only highly expressed genes:
+
+df_cts <- cellTypeSpecificity(pb)
+
+# retain only genes with total CPM summed across cell type > 100
+df_cts <- df_cts[df_cts$totalCPM > 100, ]
+
+# Violin plot of specificity score for each cell type
+plotViolin(df_cts)
+```
+```{r}
+genes <- rownames(df_cts)[apply(df_cts, 2, which.max)]
+plotPercentBars(df_cts, genes = genes)
+```
+
+```{r}
+dreamlet::plotHeatmap(df_cts, genes = genes)
+
+```
+
+```{r}
+genes
+```

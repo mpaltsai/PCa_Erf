@@ -12,6 +12,7 @@ library(SeuratObject)
 library(dplyr)
 library(ggplot2)
 library(patchwork)
+library(clustree)
 ```
 
 ```{r, read-and-merge-samples}
@@ -136,9 +137,16 @@ DimPlot(
   label = TRUE
   ) & NoLegend()
 ```
-
+```{r, compare-clustering-resolution}
+merged_seurat <- FindClusters(merged_seurat, resolution =c(0.25,0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.5,2))
+clustree(merged_seurat)
+```
 
 ```{r, joinLayers-and-marker-definition}
+#keep resolution 0.3 as we don't see many differences in clusters with higher resolution
+merged_seurat <- FindClusters(merged_seurat, resolution = 0.3, cluster.name = "cca_clusters")
+merged_seurat <- RunUMAP(merged_seurat, reduction = "integrated.cca", dims = 1:30, reduction.name = "umap.cca", return.model = TRUE)
+
 merged_seurat <- JoinLayers(merged_seurat)
 merged_seurat.markers <- FindAllMarkers(merged_seurat, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
 #save markers for this object
@@ -358,6 +366,6 @@ dbs$libraryName
 ### Clusters projected on UMAP
 ```{r, UMAP-annotated-clusters, fig.width=7, fig.height=7}
 DimPlot(annotation_res[1][[1]], reduction = "umap.cca", group.by = c("sample_source"), label.size = 2)
-DimPlot(annotation_res[1][[1]], reduction = "umap.cca", group.by = c("celltype") ,label = TRUE, label.size = 2) & NoLegend()
+DimPlot(annotation_res[1][[1]], reduction = "umap.cca", group.by = c("celltype") ,label = TRUE, label.size = 2, repel = TRUE) & NoLegend()
 ```
 

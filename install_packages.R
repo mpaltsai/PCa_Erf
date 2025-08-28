@@ -26,3 +26,52 @@ devtools::install_github('immunogenomics/presto', force = TRUE)
 
 install.packages("enrichR")
 install.packages("readxl")
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+remotes::install_github('chris-mcginnis-ucsf/DoubletFinder', force = TRUE)
+
+BiocManager::install("decoupleR", force = TRUE)
+BiocManager::install("OmnipathR", force = TRUE)
+install.packages("msigdbr")
+install.packages("ggtext")
+install.packages("clustree")
+BiocManager::install("AnnotationHub")
+#from https://bioconductor.org/packages/devel/bioc/vignettes/AnnotationHub/inst/doc/TroubleshootingTheHubs.html#default-caching-location-update
+#because I got an error when calling AnnotationHub()
+#error: Error in AnnotationHub() : 
+#DEFUNCT: As of AnnotationHub (>2.23.2), default caching location has changed.
+#Problematic cache: /home/ismini/.cache/AnnotationHub
+#See https://bioconductor.org/packages/devel/bioc/vignettes/AnnotationHub/inst/doc/TroubleshootingTheCache.html#default-caching-location-update
+
+#rappdirs::user_cache_dir(appname="AnnotationHub")
+#tools::R_user_dir("AnnotationHub", which="cache")
+# make sure you have permissions on the cache/files
+# use at own risk
+
+
+#moveFiles<-function(package){
+#  olddir <- path.expand(rappdirs::user_cache_dir(appname=package))
+#  newdir <- tools::R_user_dir(package, which="cache")
+#  dir.create(path=newdir, recursive=TRUE)
+#  files <- list.files(olddir, full.names =TRUE)
+#  moveres <- vapply(files,
+#                    FUN=function(fl){
+#                      filename = basename(fl)
+#                      newname = file.path(newdir, filename)
+#                      file.rename(fl, newname)
+#                    },
+#                    FUN.VALUE = logical(1))
+#  if(all(moveres)) unlink(olddir, recursive=TRUE)
+#}
+
+#package="AnnotationHub"
+#moveFiles(package)
+install.packages("caret")
+install.packages("randomForest")
+install.packages("pROC")
+install.packages("tidyverse")
+#had to apt install libgsl-dev and cmake first before installing the below packages
+install.packages("RcppGSL")
+devtools::install_github("DiseaseNeurogenomics/dreamlet")
+install.packages('msigdbdf', repos = 'https://igordot.r-universe.dev')
+install.packages("gprofiler2")
